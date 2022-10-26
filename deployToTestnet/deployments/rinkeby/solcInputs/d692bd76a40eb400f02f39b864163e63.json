@@ -1,0 +1,35 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/CoinFlip.sol": {
+      "content": "// SPDX-License-Identifier: SEE LICENSE IN LICENSE\npragma solidity 0.8.7;\n\ncontract CoinFlip {\n    enum Status {\n        PENDING,\n        WON,\n        LOSE\n    }\n\n    struct Game {\n        uint256 id;\n        address player;\n        uint8 choice;\n        uint256 betAmount;\n        uint256 prize;\n        uint256 result;\n        Status status;\n    }\n\n    mapping(bytes32 => Game) public games;\n\n    address public owner;\n    address public croupie;\n    uint256 public gamesCount;\n    uint256 public minBet = 0.01 ether;\n    uint256 public maxBet = 10 ether;\n    // amount * coeff / 100\n    uint256 public coeff = 195;\n    uint256 public profit;\n\n    event GameCreated(address indexed player, uint256 betAmount, uint8 choice);\n    event GamePlayed(\n        address indexed player,\n        uint256 prize,\n        uint256 choice,\n        uint256 result,\n        Status status\n    );\n\n    constructor() {\n        owner = msg.sender;\n        croupie = msg.sender;\n    }\n\n    modifier onlyOwner() {\n        require(msg.sender == owner, \"CoinFlip: Only owner\");\n        _;\n    }\n\n    modifier onlyCroupier() {\n        require(msg.sender == croupie, \"CoinFlip: Only croupier\");\n        _;\n    }\n\n    modifier onlyUniqueSeed(bytes32 _id) {\n        require(games[_id].id == 0, \"CoinFlip: Only unique seed\");\n        _;\n    }\n\n    function setBetRange(uint256 _minBet, uint256 _maxBet) external onlyOwner {\n        require(_maxBet > 0 && _minBet > 0, \"Error\");\n        require(_maxBet > _minBet, \"Error\");\n        minBet = _minBet;\n        maxBet = _maxBet;\n    }\n\n    function setCoeff(uint256 _coeff) external onlyOwner {\n        require(_coeff > 100, \"Error\");\n        coeff = _coeff;\n    }\n\n    // \"game1\" * private key -> hash = seed\n    // seed & public key  -> _v, _r, _s -> public key\n\n    function play(uint8 choice, bytes32 seed)\n        external\n        payable\n        onlyUniqueSeed(seed)\n    {\n        require(choice == 0 || choice == 1, \"CoinFlip: Choice only 0 or 1\");\n        require(\n            msg.value >= minBet && msg.value <= maxBet,\n            \"CoinFlip: only bet in range\"\n        );\n\n        uint256 possiblePrize = (msg.value * coeff) / 100;\n        require(\n            profit >= possiblePrize,\n            \"CoinFlip: not enought balance on contract\"\n        );\n\n        gamesCount++;\n        profit += msg.value;\n\n        // Game storage game = games[seed];\n        // game.id = gamesCount;\n        // game.player = msg.sender;\n        // game.choice = choice;\n        // game.prize = 0;\n        // game.result = 0;\n        // game.status = Status.PENDING;\n\n        games[seed] = Game(\n            gamesCount,\n            msg.sender,\n            choice,\n            msg.value,\n            0,\n            0,\n            Status.PENDING\n        );\n\n        emit GameCreated(msg.sender, msg.value, choice);\n    }\n\n    function confirm(\n        bytes32 seed,\n        uint8 _v,\n        bytes32 _r,\n        bytes32 _s\n    ) external onlyUniqueSeed(seed) {\n        bytes memory prefix = \"\\x19Ethereum Signed Message:\\n32\";\n        bytes32 prefixedHash = keccak256(abi.encodePacked(prefix, seed));\n\n        require(ecrecover(prefixedHash, _v, _r, _s) == croupie, \"Invalid sign\");\n\n        uint256 result = uint256(_s) % 2;\n\n        Game storage game = games[seed];\n\n        if (game.choice == result) {\n            game.status = Status.WON;\n            game.result = result;\n            game.prize = (game.betAmount * coeff) / 100;\n\n            profit -= game.prize;\n\n            payable(game.player).transfer(game.prize);\n        } else {\n            game.status = Status.LOSE;\n            game.result = result;\n\n            profit += game.betAmount;\n        }\n\n        emit GamePlayed(\n            game.player,\n            game.prize,\n            game.choice,\n            game.result,\n            game.status\n        );\n    }\n\n    function withdraw(uint256 _amount) external onlyOwner {\n        require(_amount <= address(this).balance, \"Error\");\n        profit -= _amount;\n        payable(msg.sender).transfer(_amount);\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
